@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Teachable Machine 인터페이스</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.3/dist/teachablemachine-image.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #output-display {
+            margin-top: 20px;
+            padding: 20px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 24px;
+            text-align: center;
+            min-height: 100px;
+        }
+        #webcam-container {
+            margin: 20px 0;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Teachable Machine 인터페이스</h1>
+        
+        <div class="input-group">
+            <label for="model-upload">모델 파일 업로드:</label>
+            <input type="file" id="model-upload" accept=".json">
+        </div>
+        
+        <div class="input-group">
+            <label for="target-label">감지할 신호:</label>
+            <input type="text" id="target-label" placeholder="감지할 레이블을 입력하세요">
+        </div>
+        
+        <div class="input-group">
+            <label for="output-message">출력 메시지:</label>
+            <input type="text" id="output-message" placeholder="출력할 메시지를 입력하세요">
+        </div>
+        
+        <button onclick="startPrediction()">시작</button>
+        
+        <div id="webcam-container"></div>
+        
+        <div id="output-display">
+            여기에 메시지가 표시됩니다
+        </div>
+    </div>
+
+    <script>
+        let model, webcam, labelContainer, maxPredictions;
+
+        async function startPrediction() {
+            const modelURL = URL.createObjectURL(document.getElementById('model-upload').files[0]);
+            const modelJSON = modelURL + "model.json";
+            const modelWeights = modelURL + "weights.bin";
+            
+            const targetLabel = document.getElementById('target-label').value;
+            const outputMessage = document.getElementById('output-message').value;
+
+            model = await tmImage.load(modelJSON, modelWeights);
+            maxPredictions = model.getTotalClasses();
+
+            const flip = true;
+            webcam = new tmImage.Webcam(400, 400, flip);
+            await webcam.setup();
+            await webcam.play();
+            
+            window.requestAnimationFrame(loop);
+
+            document.getElementById('webcam-container').appendChild(webcam.canvas);
+        }
+
+        async function loop() {
+            webcam.update();
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict() {
+            const prediction = await model.predict(webcam.canvas);
+            const targetLabel = document.getElementById('target-label').value;
+            const outputMessage = document.getElementById('output-message').value;
+            
+            for (let i = 0; i < maxPredictions; i++) {
+                if (prediction[i].className === targetLabel && prediction[i].probability > 0.8) {
+                    document.getElementById('output-display').textContent = outputMessage;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
