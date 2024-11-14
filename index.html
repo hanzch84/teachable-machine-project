@@ -21,9 +21,6 @@
             border-radius: 10px;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
-        .controls {
-            margin-bottom: 20px;
-        }
         .input-group {
             margin-bottom: 15px;
         }
@@ -46,6 +43,7 @@
             border-radius: 4px;
             cursor: pointer;
             margin-right: 10px;
+            font-size: 16px;
         }
         button:hover {
             background-color: #45a049;
@@ -57,21 +55,36 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            margin: 20px 0;
             min-height: 400px;
-            margin-top: 20px;
+            border-radius: 10px;
+            background-color: #f8f9fa;
         }
         #status {
             text-align: center;
             margin: 10px 0;
             padding: 10px;
-            background-color: #f8f9fa;
+            background-color: #e8f5e9;
             border-radius: 4px;
+            font-weight: bold;
         }
         #results {
             margin-top: 20px;
-            padding: 10px;
+            padding: 15px;
             background-color: #f8f9fa;
             border-radius: 4px;
+        }
+        .result-item {
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .high-probability {
+            color: #2e7d32;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -126,8 +139,6 @@
         function draw() {
             background(240);
             
-            currentFontSize = lerp(currentFontSize, targetFontSize, 0.1);
-            
             // 파티클 업데이트 및 그리기
             for (let i = particles.length - 1; i >= 0; i--) {
                 particles[i].update();
@@ -136,6 +147,9 @@
                     particles.splice(i, 1);
                 }
             }
+            
+            // 텍스트 크기 애니메이션
+            currentFontSize = lerp(currentFontSize, targetFontSize, 0.1);
             
             // 텍스트 그리기
             fill(currentColor);
@@ -177,6 +191,11 @@
         }
 
         function updateDisplay(message, detected = false) {
+            // 메시지가 비어있거나 ... 일 경우 기본 메시지 사용
+            if (!message || message === '...') {
+                message = detected ? '감지됨!' : '소리를 듣는 중...';
+            }
+            
             displayText = message;
             if (detected) {
                 targetFontSize = 60;
@@ -257,38 +276,45 @@
         }
 
         async function predict() {
-            const prediction = await model.predict();
-            const targetLabel = document.getElementById('target-label').value;
-            const outputMessage = document.getElementById('output-message').value;
-            
-            // 모든 클래스의 예측 결과를 화면에 표시
-            let resultsHTML = '<h3>실시간 감지 결과:</h3>';
-            let detected = false;
-            
-            for (let i = 0; i < maxPredictions; i++) {
-                const probability = prediction[i].probability * 100;
-                const isTarget = prediction[i].className === targetLabel;
-                const backgroundColor = isTarget ? '#e8f5e9' : 'transparent';
-                const probabilityColor = probability > 80 ? '#4CAF50' : '#666';
+            try {
+                const prediction = await model.predict();
+                const targetLabel = document.getElementById('target-label').value;
+                const outputMessage = document.getElementById('output-message').value;
                 
-                resultsHTML += `
-                    <div style="padding: 5px; background-color: ${backgroundColor}; margin: 5px 0; border-radius: 4px;">
-                        <strong>${prediction[i].className}:</strong> 
-                        <span style="color: ${probabilityColor}">${probability.toFixed(2)}%</span>
-                    </div>
-                `;
+                let resultsHTML = '<h3>실시간 감지 결과:</h3>';
+                let maxProbability = 0;
+                let detectedClass = '';
                 
-                if (isTarget && probability > 80) {
-                    detected = true;
+                for (let i = 0; i < maxPredictions; i++) {
+                    const className = prediction[i].className;
+                    const probability = prediction[i].probability * 100;
+                    
+                    if (probability > maxProbability) {
+                        maxProbability = probability;
+                        detectedClass = className;
+                    }
+                    
+                    const isHighProbability = probability > 80;
+                    resultsHTML += `
+                        <div class="result-item" style="background-color: ${className === targetLabel ? '#e8f5e9' : 'transparent'}">
+                            <strong>${className}</strong>
+                            <span class="${isHighProbability ? 'high-probability' : ''}">${probability.toFixed(1)}%</span>
+                        </div>
+                    `;
                 }
-            }
-            
-            document.getElementById('results').innerHTML = resultsHTML;
-            
-            if (detected) {
-                updateDisplay(outputMessage, true);
-            } else {
-                updateDisplay('소리를 기다리는 중...', false);
+                
+                document.getElementById('results').innerHTML = resultsHTML;
+                
+                if (detectedClass === targetLabel && maxProbability > 80) {
+                    console.log(`감지됨: ${detectedClass} (${maxProbability.toFixed(1)}%)`);
+                    updateDisplay(outputMessage, true);
+                } else {
+                    updateDisplay('소리를 듣는 중...', false);
+                }
+                
+            } catch (error) {
+                console.error('예측 중 오류:', error);
+                document.getElementById('status').textContent = '예측 오류 발생';
             }
         }
     </script>
