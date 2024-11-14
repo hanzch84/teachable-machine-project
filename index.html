@@ -47,6 +47,10 @@
         button:hover {
             background-color: #45a049;
         }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
         #output-display {
             margin-top: 20px;
             padding: 20px;
@@ -62,11 +66,15 @@
             background-color: #f8f9fa;
             border-radius: 4px;
         }
-        .file-uploads {
+        .file-upload {
             margin-bottom: 20px;
         }
-        .file-uploads label {
-            margin-top: 10px;
+        .instructions {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
         }
     </style>
 </head>
@@ -74,15 +82,19 @@
     <div class="container">
         <h1>Teachable Machine 오디오 인터페이스</h1>
         
-        <div class="file-uploads">
-            <label for="model-json">model.json 파일:</label>
-            <input type="file" id="model-json" accept=".json">
-            
-            <label for="weights-bin">weights.bin 파일:</label>
-            <input type="file" id="weights-bin" accept=".bin">
-            
-            <label for="metadata-json">metadata.json 파일:</label>
-            <input type="file" id="metadata-json" accept=".json">
+        <div class="instructions">
+            <p><strong>사용 방법:</strong></p>
+            <ol>
+                <li>Teachable Machine에서 다운로드한 모델 폴더에서 'model.json' 파일을 선택하세요.</li>
+                <li>감지하고 싶은 소리의 레이블을 입력하세요.</li>
+                <li>감지했을 때 표시할 메시지를 입력하세요.</li>
+                <li>'시작' 버튼을 클릭하면 마이크가 활성화됩니다.</li>
+            </ol>
+        </div>
+
+        <div class="file-upload">
+            <label for="model-upload">모델 파일 선택 (model.json):</label>
+            <input type="file" id="model-upload" accept=".json">
         </div>
         
         <div class="input-group">
@@ -123,23 +135,19 @@
         }
 
         async function init() {
-            const modelJson = document.getElementById('model-json').files[0];
-            const weightsFile = document.getElementById('weights-bin').files[0];
-            const metadataFile = document.getElementById('metadata-json').files[0];
-
-            if (!modelJson || !weightsFile || !metadataFile) {
-                alert('모든 모델 파일을 선택해주세요 (model.json, weights.bin, metadata.json)');
+            const modelFile = document.getElementById('model-upload').files[0];
+            if (!modelFile) {
+                alert('모델 파일을 선택해주세요.');
                 return;
             }
 
-            const modelURL = URL.createObjectURL(modelJson);
-            const weightsURL = URL.createObjectURL(weightsFile);
-            const metadataURL = URL.createObjectURL(metadataFile);
+            const baseURL = URL.createObjectURL(modelFile).replace('model.json', '');
 
             document.getElementById('audio-status').textContent = '마이크 상태: 초기화 중...';
             
             try {
-                model = await tmAudio.load(modelURL, weightsURL, metadataURL);
+                // URL 경로에서 .json 확장자를 제거하고 기본 경로만 사용
+                model = await tmAudio.load(baseURL);
                 maxPredictions = model.getTotalClasses();
 
                 await model.audioConfig.start();
@@ -152,7 +160,7 @@
             } catch (error) {
                 console.error('Error:', error);
                 document.getElementById('audio-status').textContent = '마이크 상태: 오류 발생';
-                alert('모델 로딩 중 오류가 발생했습니다.');
+                alert('모델 로딩 중 오류가 발생했습니다. 올바른 모델 파일인지 확인해주세요.');
             }
         }
 
@@ -162,6 +170,7 @@
                 isListening = false;
                 document.getElementById('audio-status').textContent = '마이크 상태: 중지됨';
                 document.getElementById('stop-button').disabled = true;
+                document.getElementById('output-display').textContent = '여기에 메시지가 표시됩니다';
             }
         }
 
@@ -179,6 +188,7 @@
             for (let i = 0; i < maxPredictions; i++) {
                 if (prediction[i].className === targetLabel && prediction[i].probability > 0.8) {
                     document.getElementById('output-display').textContent = outputMessage;
+                    return; // 일치하는 레이블을 찾으면 반복 중단
                 }
             }
         }
