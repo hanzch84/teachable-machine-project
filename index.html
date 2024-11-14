@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Teachable Machine 오디오 인터페이스</title>
+    <title>실시간 소리 감지</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/audio@0.8.3/dist/teachablemachine-audio.min.js"></script>
@@ -50,6 +50,9 @@
         button:hover {
             background-color: #45a049;
         }
+        button:disabled {
+            background-color: #cccccc;
+        }
         #canvas-container {
             display: flex;
             justify-content: center;
@@ -64,11 +67,17 @@
             background-color: #f8f9fa;
             border-radius: 4px;
         }
+        #results {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>소리 감지 시각화</h1>
+        <h1>실시간 소리 감지</h1>
         
         <div class="controls">
             <div class="input-group">
@@ -92,6 +101,7 @@
 
         <div id="status">준비중...</div>
         <div id="canvas-container"></div>
+        <div id="results"></div>
     </div>
 
     <script>
@@ -99,37 +109,37 @@
         let isListening = false;
         let particles = [];
         let displayText = "";
-        let textSize = 20;
-        let targetTextSize = 20;
-        let textColor;
-        
+        let currentFontSize = 20;
+        let targetFontSize = 20;
+        let currentColor;
+        let p5Canvas;
+
         function setup() {
-            const canvas = createCanvas(600, 400);
-            canvas.parent('canvas-container');
+            p5Canvas = createCanvas(600, 400);
+            p5Canvas.parent('canvas-container');
             textAlign(CENTER, CENTER);
-            textColor = color(0);
+            currentColor = color(0);
             frameRate(60);
+            textFont('Arial');
         }
 
         function draw() {
             background(240);
             
-            // 텍스트 크기 애니메이션
-            textSize = lerp(textSize, targetTextSize, 0.1);
+            currentFontSize = lerp(currentFontSize, targetFontSize, 0.1);
             
             // 파티클 업데이트 및 그리기
             for (let i = particles.length - 1; i >= 0; i--) {
-                let p = particles[i];
-                p.update();
-                p.display();
-                if (p.isDead()) {
+                particles[i].update();
+                particles[i].display();
+                if (particles[i].isDead()) {
                     particles.splice(i, 1);
                 }
             }
             
             // 텍스트 그리기
-            textSize(textSize);
-            fill(textColor);
+            fill(currentColor);
+            textSize(currentFontSize);
             text(displayText, width/2, height/2);
         }
 
@@ -169,18 +179,21 @@
         function updateDisplay(message, detected = false) {
             displayText = message;
             if (detected) {
-                targetTextSize = 60;
-                textColor = color(random(255), random(255), random(255));
+                targetFontSize = 60;
+                currentColor = color(random(255), random(255), random(255));
                 createParticles();
             } else {
-                targetTextSize = 20;
-                textColor = color(0);
+                targetFontSize = 20;
+                currentColor = color(0);
             }
         }
 
         async function initAudio() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: true,
+                    video: false
+                });
                 loadModel();
             } catch (err) {
                 document.getElementById('status').textContent = '마이크 권한이 필요합니다';
@@ -195,9 +208,10 @@
                 return;
             }
 
-            const modelFiles = {};
+            let modelFiles = {};
             for (let file of files) {
-                modelFiles[file.name] = URL.createObjectURL(file);
+                const url = URL.createObjectURL(file);
+                modelFiles[file.name] = url;
             }
 
             document.getElementById('status').textContent = '모델 로딩 중...';
@@ -215,11 +229,13 @@
                 
                 document.getElementById('status').textContent = '듣는 중...';
                 document.getElementById('stop-button').disabled = false;
+                updateDisplay('소리를 기다리는 중...');
                 
                 window.requestAnimationFrame(loop);
             } catch (error) {
                 console.error('Error:', error);
                 document.getElementById('status').textContent = '모델 로딩 실패';
+                alert('모델 파일을 확인해주세요.');
             }
         }
 
@@ -230,6 +246,7 @@
                 document.getElementById('status').textContent = '중지됨';
                 document.getElementById('stop-button').disabled = true;
                 updateDisplay('중지됨');
+                document.getElementById('results').innerHTML = '';
             }
         }
 
@@ -244,16 +261,34 @@
             const targetLabel = document.getElementById('target-label').value;
             const outputMessage = document.getElementById('output-message').value;
             
+            // 모든 클래스의 예측 결과를 화면에 표시
+            let resultsHTML = '<h3>실시간 감지 결과:</h3>';
             let detected = false;
+            
             for (let i = 0; i < maxPredictions; i++) {
-                if (prediction[i].className === targetLabel && prediction[i].probability > 0.8) {
+                const probability = prediction[i].probability * 100;
+                const isTarget = prediction[i].className === targetLabel;
+                const backgroundColor = isTarget ? '#e8f5e9' : 'transparent';
+                const probabilityColor = probability > 80 ? '#4CAF50' : '#666';
+                
+                resultsHTML += `
+                    <div style="padding: 5px; background-color: ${backgroundColor}; margin: 5px 0; border-radius: 4px;">
+                        <strong>${prediction[i].className}:</strong> 
+                        <span style="color: ${probabilityColor}">${probability.toFixed(2)}%</span>
+                    </div>
+                `;
+                
+                if (isTarget && probability > 80) {
                     detected = true;
-                    break;
                 }
             }
             
+            document.getElementById('results').innerHTML = resultsHTML;
+            
             if (detected) {
                 updateDisplay(outputMessage, true);
+            } else {
+                updateDisplay('소리를 기다리는 중...', false);
             }
         }
     </script>
