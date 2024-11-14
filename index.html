@@ -102,10 +102,20 @@
             align-items: center;
             background-color: white;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
         }
         .high-probability {
             color: #2e7d32;
             font-weight: bold;
+        }
+        .detected {
+            background-color: #e8f5e9;
+            transform: scale(1.02);
+        }
+        .help-text {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 5px;
         }
     </style>
 </head>
@@ -122,13 +132,15 @@
             </div>
             
             <div class="input-group">
-                <label for="target-label">감지할 소리:</label>
-                <input type="text" id="target-label" placeholder="감지할 소리의 레이블을 입력하세요">
+                <label for="target-labels">감지할 소리 (콤마로 구분):</label>
+                <input type="text" id="target-labels" placeholder="Class 1, Class 2, ...">
+                <div class="help-text">예: 박수 소리, 휘파람, 기침</div>
             </div>
             
             <div class="input-group">
-                <label for="output-message">출력 메시지:</label>
-                <input type="text" id="output-message" placeholder="출력할 메시지를 입력하세요">
+                <label for="output-messages">출력 메시지 (콤마로 구분):</label>
+                <input type="text" id="output-messages" placeholder="메시지1, 메시지2, ...">
+                <div class="help-text">각 소리에 대응하는 메시지를 입력하세요</div>
             </div>
             
             <div class="button-group">
@@ -150,6 +162,7 @@
         let currentFontSize = 20;
         let targetFontSize = 20;
         let currentColor;
+        let lastDetectedClass = null;
 
         function setup() {
             const canvas = createCanvas(600, 400);
@@ -164,7 +177,6 @@
         function draw() {
             background(240);
             
-            // 파티클 업데이트 및 그리기
             for (let i = particles.length - 1; i >= 0; i--) {
                 particles[i].update();
                 particles[i].display();
@@ -173,10 +185,8 @@
                 }
             }
             
-            // 텍스트 크기 애니메이션
             currentFontSize = lerp(currentFontSize, targetFontSize, 0.1);
             
-            // 텍스트 그리기
             fill(currentColor);
             textSize(currentFontSize);
             text(displayText, width/2, height/2);
@@ -215,20 +225,24 @@
             }
         }
 
-        function updateDisplay(message, detected = false) {
+        function updateDisplay(message, detected = false, classLabel = '') {
             if (!message || message === '...') {
-                message = detected ? '감지됨!' : '소리를 듣는 중...';
+                message = detected ? `${classLabel} 감지됨!` : '소리를 듣는 중...';
             }
             
-            displayText = message;
-            if (detected) {
+            // 새로운 클래스가 감지되었을 때만 애니메이션 효과 적용
+            if (detected && lastDetectedClass !== classLabel) {
                 targetFontSize = 60;
                 currentColor = color(random(255), random(255), random(255));
                 createParticles();
-            } else {
+                lastDetectedClass = classLabel;
+            } else if (!detected) {
                 targetFontSize = 20;
                 currentColor = color(0);
+                lastDetectedClass = null;
             }
+            
+            displayText = message;
         }
 
         async function startListening() {
@@ -243,14 +257,12 @@
             updateDisplay('모델 로딩 중...');
 
             try {
-                // URL 마지막에 슬래시 추가
                 let modelPath = modelUrl;
                 if (!modelPath.endsWith('/')) {
                     modelPath += '/';
                 }
                 modelPath += 'model.json';
 
-                // ml5 모델 로드
                 classifier = await ml5.soundClassifier(modelPath, modelLoaded);
             } catch (error) {
                 console.error('모델 로드 에러:', error);
@@ -277,6 +289,7 @@
                 document.getElementById('start-button').disabled = false;
                 updateDisplay('중지됨');
                 document.getElementById('results').innerHTML = '';
+                lastDetectedClass = null;
             }
         }
 
@@ -288,28 +301,49 @@
 
             if (!isListening) return;
 
-            const targetLabel = document.getElementById('target-label').value;
-            const outputMessage = document.getElementById('output-message').value || '감지됨!';
+            const targetLabels = document.getElementById('target-labels').value
+                .split(',')
+                .map(label => label.trim())
+                .filter(label => label.length > 0);
+            
+            const outputMessages = document.getElementById('output-messages').value
+                .split(',')
+                .map(msg => msg.trim());
             
             let resultsHTML = '<h3>실시간 감지 결과:</h3>';
+            let maxProbability = 0;
+            let detectedLabel = null;
+            let detectedMessage = null;
+            
             results.forEach(result => {
-                const isTarget = result.label === targetLabel;
+                const targetIndex = targetLabels.indexOf(result.label);
+                const isTarget = targetIndex !== -1;
                 const probability = result.confidence * 100;
                 const isHighProbability = probability > 80;
                 
+                // 가장 높은 확률의 타겟 클래스 찾기
+                if (isTarget && probability > maxProbability && probability > 80) {
+                    maxProbability = probability;
+                    detectedLabel = result.label;
+                    detectedMessage = outputMessages[targetIndex];
+                }
+                
                 resultsHTML += `
-                    <div class="result-item" style="background-color: ${isTarget ? '#e8f5e9' : 'white'}">
+                    <div class="result-item ${isHighProbability && isTarget ? 'detected' : ''}" 
+                         style="background-color: ${isTarget ? '#e8f5e9' : 'white'}">
                         <strong>${result.label}</strong>
                         <span class="${isHighProbability ? 'high-probability' : ''}">${probability.toFixed(1)}%</span>
                     </div>
                 `;
-
-                if (isTarget && probability > 80) {
-                    updateDisplay(outputMessage, true);
-                }
             });
             
             document.getElementById('results').innerHTML = resultsHTML;
+            
+            if (detectedLabel) {
+                updateDisplay(detectedMessage, true, detectedLabel);
+            } else {
+                updateDisplay('소리를 듣는 중...', false);
+            }
         }
     </script>
 </body>
