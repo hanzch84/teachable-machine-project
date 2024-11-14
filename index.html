@@ -1,115 +1,208 @@
 <!DOCTYPE html>
 <html lang="ko">
-<!-- head 부분은 동일하게 유지하되 JSZip 라이브러리 추가 -->
 <head>
     <meta charset="UTF-8">
     <title>Teachable Machine 오디오 인터페이스</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/audio@0.8.3/dist/teachablemachine-audio.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <!-- 이전 스타일 유지 -->
     <style>
-        /* 이전 스타일 유지 */
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .controls {
+            margin-bottom: 20px;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #canvas-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 400px;
+            margin-top: 20px;
+        }
+        #status {
+            text-align: center;
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Teachable Machine 오디오 인터페이스</h1>
+        <h1>소리 감지 시각화</h1>
         
-        <div class="instructions">
-            <p><strong>사용 방법:</strong></p>
-            <ol>
-                <li>Teachable Machine에서 다운로드한 모델 폴더를 ZIP 파일로 압축하세요.</li>
-                <li>압축된 ZIP 파일을 업로드하세요.</li>
-                <li>감지하고 싶은 소리의 레이블을 입력하세요.</li>
-                <li>감지했을 때 표시할 메시지를 입력하세요.</li>
-                <li>'시작' 버튼을 클릭하면 마이크가 활성화됩니다.</li>
-            </ol>
+        <div class="controls">
+            <div class="input-group">
+                <label for="model-upload">모델 파일들 선택 (metadata.json, model.json, weights.bin):</label>
+                <input type="file" id="model-upload" multiple accept=".json,.bin">
+            </div>
+            
+            <div class="input-group">
+                <label for="target-label">감지할 소리:</label>
+                <input type="text" id="target-label" placeholder="감지할 소리의 레이블을 입력하세요">
+            </div>
+            
+            <div class="input-group">
+                <label for="output-message">출력 메시지:</label>
+                <input type="text" id="output-message" placeholder="출력할 메시지를 입력하세요">
+            </div>
+            
+            <button onclick="initAudio()">시작</button>
+            <button onclick="stopListening()" id="stop-button" disabled>중지</button>
         </div>
 
-        <div class="file-upload">
-            <label for="model-upload">모델 ZIP 파일 선택:</label>
-            <input type="file" id="model-upload" accept=".zip">
-        </div>
-        
-        <div class="input-group">
-            <label for="target-label">감지할 소리:</label>
-            <input type="text" id="target-label" placeholder="감지할 소리의 레이블을 입력하세요">
-        </div>
-        
-        <div class="input-group">
-            <label for="output-message">출력 메시지:</label>
-            <input type="text" id="output-message" placeholder="출력할 메시지를 입력하세요">
-        </div>
-        
-        <button onclick="initAudio()">시작</button>
-        <button onclick="stopListening()" id="stop-button" disabled>중지</button>
-        
-        <div id="audio-status">
-            마이크 상태: 대기중
-        </div>
-        
-        <div id="output-display">
-            여기에 메시지가 표시됩니다
-        </div>
+        <div id="status">준비중...</div>
+        <div id="canvas-container"></div>
     </div>
 
     <script>
         let model, maxPredictions;
         let isListening = false;
-        let modelFiles = {};
+        let particles = [];
+        let displayText = "";
+        let textSize = 20;
+        let targetTextSize = 20;
+        let textColor;
         
-        // ZIP 파일 처리 함수
-        async function handleZipFile(file) {
-            const zip = new JSZip();
-            try {
-                const contents = await zip.loadAsync(file);
-                for (let filename in contents.files) {
-                    if (!contents.files[filename].dir) {
-                        const blob = await contents.files[filename].async('blob');
-                        modelFiles[filename] = URL.createObjectURL(blob);
-                    }
+        function setup() {
+            const canvas = createCanvas(600, 400);
+            canvas.parent('canvas-container');
+            textAlign(CENTER, CENTER);
+            textColor = color(0);
+            frameRate(60);
+        }
+
+        function draw() {
+            background(240);
+            
+            // 텍스트 크기 애니메이션
+            textSize = lerp(textSize, targetTextSize, 0.1);
+            
+            // 파티클 업데이트 및 그리기
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.update();
+                p.display();
+                if (p.isDead()) {
+                    particles.splice(i, 1);
                 }
-                return true;
-            } catch (error) {
-                console.error('ZIP 파일 처리 중 오류:', error);
-                return false;
+            }
+            
+            // 텍스트 그리기
+            textSize(textSize);
+            fill(textColor);
+            text(displayText, width/2, height/2);
+        }
+
+        class Particle {
+            constructor(x, y) {
+                this.pos = createVector(x, y);
+                this.vel = p5.Vector.random2D().mult(random(2, 5));
+                this.acc = createVector(0, 0.1);
+                this.life = 255;
+                this.color = color(random(150, 255), random(150, 255), random(150, 255));
+            }
+            
+            update() {
+                this.vel.add(this.acc);
+                this.pos.add(this.vel);
+                this.life -= 5;
+            }
+            
+            display() {
+                noStroke();
+                this.color.setAlpha(this.life);
+                fill(this.color);
+                circle(this.pos.x, this.pos.y, 8);
+            }
+            
+            isDead() {
+                return this.life <= 0;
+            }
+        }
+
+        function createParticles() {
+            for (let i = 0; i < 20; i++) {
+                particles.push(new Particle(width/2 + random(-50, 50), height/2 + random(-50, 50)));
+            }
+        }
+
+        function updateDisplay(message, detected = false) {
+            displayText = message;
+            if (detected) {
+                targetTextSize = 60;
+                textColor = color(random(255), random(255), random(255));
+                createParticles();
+            } else {
+                targetTextSize = 20;
+                textColor = color(0);
             }
         }
 
         async function initAudio() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                init();
+                loadModel();
             } catch (err) {
+                document.getElementById('status').textContent = '마이크 권한이 필요합니다';
                 console.error('마이크 권한 에러:', err);
-                document.getElementById('audio-status').textContent = '마이크 상태: 권한 거부됨';
-                alert('마이크 사용 권한이 필요합니다.');
             }
         }
 
-        async function init() {
-            const zipFile = document.getElementById('model-upload').files[0];
-            if (!zipFile) {
-                alert('ZIP 파일을 선택해주세요.');
+        async function loadModel() {
+            const files = document.getElementById('model-upload').files;
+            if (files.length < 3) {
+                alert('세 개의 모델 파일을 모두 선택해주세요');
                 return;
             }
 
-            document.getElementById('audio-status').textContent = '마이크 상태: 모델 파일 처리 중...';
+            const modelFiles = {};
+            for (let file of files) {
+                modelFiles[file.name] = URL.createObjectURL(file);
+            }
+
+            document.getElementById('status').textContent = '모델 로딩 중...';
             
             try {
-                // ZIP 파일 처리
-                const success = await handleZipFile(zipFile);
-                if (!success) {
-                    throw new Error('ZIP 파일 처리 실패');
-                }
-
-                if (!modelFiles['model.json'] || !modelFiles['weights.bin'] || !modelFiles['metadata.json']) {
-                    throw new Error('필요한 모델 파일이 ZIP 안에 없습니다.');
-                }
-
-                // 모델 로드
                 model = await tmAudio.load(
                     modelFiles['model.json'],
                     modelFiles['weights.bin'],
@@ -117,18 +210,16 @@
                 );
                 
                 maxPredictions = model.getTotalClasses();
-
                 await model.audioConfig.start();
                 isListening = true;
                 
-                document.getElementById('audio-status').textContent = '마이크 상태: 듣는 중...';
+                document.getElementById('status').textContent = '듣는 중...';
                 document.getElementById('stop-button').disabled = false;
                 
                 window.requestAnimationFrame(loop);
             } catch (error) {
                 console.error('Error:', error);
-                document.getElementById('audio-status').textContent = '마이크 상태: 오류 발생';
-                alert('모델 로딩 중 오류가 발생했습니다. 올바른 ZIP 파일인지 확인해주세요.');
+                document.getElementById('status').textContent = '모델 로딩 실패';
             }
         }
 
@@ -136,9 +227,9 @@
             if (model && model.audioConfig) {
                 model.audioConfig.stop();
                 isListening = false;
-                document.getElementById('audio-status').textContent = '마이크 상태: 중지됨';
+                document.getElementById('status').textContent = '중지됨';
                 document.getElementById('stop-button').disabled = true;
-                document.getElementById('output-display').textContent = '여기에 메시지가 표시됩니다';
+                updateDisplay('중지됨');
             }
         }
 
@@ -153,11 +244,16 @@
             const targetLabel = document.getElementById('target-label').value;
             const outputMessage = document.getElementById('output-message').value;
             
+            let detected = false;
             for (let i = 0; i < maxPredictions; i++) {
                 if (prediction[i].className === targetLabel && prediction[i].probability > 0.8) {
-                    document.getElementById('output-display').textContent = outputMessage;
-                    return;
+                    detected = true;
+                    break;
                 }
+            }
+            
+            if (detected) {
+                updateDisplay(outputMessage, true);
             }
         }
     </script>
