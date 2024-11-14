@@ -83,7 +83,7 @@
             <input type="text" id="output-message" placeholder="출력할 메시지를 입력하세요">
         </div>
         
-        <button onclick="init()">시작</button>
+        <button onclick="initAudio()">시작</button>
         <button onclick="stopListening()" id="stop-button" disabled>중지</button>
         
         <div id="audio-status">
@@ -96,8 +96,21 @@
     </div>
 
     <script>
-        let model, labelContainer, maxPredictions;
+        let model, maxPredictions;
         let isListening = false;
+        
+        // 마이크 권한 요청 및 초기화
+        async function initAudio() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                // 마이크 권한이 허용되면 모델 초기화 진행
+                init();
+            } catch (err) {
+                console.error('마이크 권한 에러:', err);
+                document.getElementById('audio-status').textContent = '마이크 상태: 권한 거부됨';
+                alert('마이크 사용 권한이 필요합니다.');
+            }
+        }
 
         async function init() {
             const modelFile = document.getElementById('model-upload').files[0];
@@ -130,7 +143,7 @@
             } catch (error) {
                 console.error('Error:', error);
                 document.getElementById('audio-status').textContent = '마이크 상태: 오류 발생';
-                alert('마이크 접근 권한을 확인해주세요.');
+                alert('모델 로딩 중 오류가 발생했습니다.');
             }
         }
 
